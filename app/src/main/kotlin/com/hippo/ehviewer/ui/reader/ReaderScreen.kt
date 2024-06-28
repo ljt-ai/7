@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.reader
 
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -65,7 +66,7 @@ import moe.tarsin.kt.unreachable
 
 @Destination<RootGraph>
 @Composable
-fun ReaderScreen(info: BaseGalleryInfo, page: Int = -1, navigator: DestinationsNavigator) = composing(navigator) {
+fun AnimatedVisibilityScope.ReaderScreen(info: BaseGalleryInfo, page: Int = -1, navigator: DestinationsNavigator) = composing(navigator) {
     ConfigureKeepScreenOn()
     val pageLoader = remember {
         val archive = DownloadManager.getDownloadInfo(info.gid)?.archiveFile
