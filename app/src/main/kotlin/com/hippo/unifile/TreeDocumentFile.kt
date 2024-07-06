@@ -23,11 +23,22 @@ import splitties.init.appCtx
 
 class TreeDocumentFile(
     parent: TreeDocumentFile?,
-    override val uri: Uri,
-    name: String? = null,
-    mimeType: String? = null,
-) : CachingFile<TreeDocumentFile>(parent) {
-    override fun list() = runCatching {
+    private var backingUri: Uri = Uri.EMPTY,
+    private val givenName: String? = null,
+    private val givenMimeType: String? = null,
+) : FileNode<TreeDocumentFile>(parent) {
+
+    override val uri: Uri
+        get() = prepareUri().let { backingUri }
+
+    private fun prepareUri() {
+        if (backingUri != Uri.EMPTY) return
+        val parent = parent ?: return
+        val f = parent.findFile(name) ?: return
+        backingUri = f.uri
+    }
+
+    override fun listFiles() = runCatching {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getDocumentId(uri))
         appCtx.contentResolver.query(childrenUri, projection, null, null, null)?.use { c ->
             MutableList(c.count) {
@@ -39,45 +50,36 @@ class TreeDocumentFile(
                 TreeDocumentFile(this, documentUri, displayName, mimeType)
             }
         }
-    }.getOrNull()
+    }.getOrNull() ?: emptyList()
 
-    private fun createFile(displayName: String, mimeType: String) =
-        DocumentsContractApi21.createFile(uri, mimeType, displayName)?.let { result ->
-            TreeDocumentFile(this, result, displayName, mimeType).also { popCacheIfPresent(it) }
-        }
+    private fun createFile(displayName: String, mimeType: String) = DocumentsContractApi21.createFile(uri, mimeType, displayName)?.let { result ->
+        TreeDocumentFile(this, result, displayName, mimeType)
+    }
 
     override fun createFile(displayName: String): UniFile? {
-        val child = findFile(displayName)
-        return if (child != null) {
-            child.takeIf { it.isFile }
-        } else {
-            val extension = displayName.substringAfterLast('.', "").ifEmpty { null }?.lowercase()
-            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
-            createFile(displayName, mimeType)
-        }
+        if (!ensureDir()) return null
+        val extension = displayName.substringAfterLast('.', "").ifEmpty { null }?.lowercase()
+        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
+        return createFile(displayName, mimeType)
     }
 
     override fun createDirectory(displayName: String): UniFile? {
-        val child = findFile(displayName)
-        return if (child != null) {
-            child.takeIf { it.isDirectory }
-        } else {
-            createFile(displayName, Document.MIME_TYPE_DIR)
-        }
+        if (!ensureDir()) return null
+        return createFile(displayName, Document.MIME_TYPE_DIR)
     }
 
-    override val name by lazy {
-        name ?: DocumentsContractApi19.getName(uri)!!
-    }
+    override val name
+        get() = givenName ?: DocumentsContractApi19.getName(uri)!!
 
-    private val mimeType by lazy {
-        mimeType ?: DocumentsContractApi19.getRawType(uri)
-    }
+    private val mimeType
+        get() = givenMimeType ?: DocumentsContractApi19.getRawType(uri)
 
     override val type: String?
         get() = mimeType.takeUnless { isDirectory }
+
     override val isDirectory: Boolean
         get() = mimeType == Document.MIME_TYPE_DIR
+
     override val isFile: Boolean
         get() = !type.isNullOrEmpty()
 
@@ -89,18 +91,15 @@ class TreeDocumentFile(
 
     override fun canWrite() = DocumentsContractApi19.canWrite(uri)
 
-    override fun delete() = DocumentsContractApi19.delete(uri).also {
-        if (it) parent?.evictCacheIfPresent(this)
-    }
+    override fun resolve(displayName: String) = TreeDocumentFile(this, givenName = displayName)
+
+    override fun delete() = DocumentsContractApi19.delete(uri)
 
     override fun exists() = DocumentsContractApi19.exists(uri)
 
-    override fun renameTo(displayName: String): UniFile? =
-        DocumentsContractApi21.renameTo(uri, displayName)?.let { result ->
-            TreeDocumentFile(parent, result, displayName).also {
-                parent?.replaceCacheIfPresent(this, it)
-            }
-        }
+    override fun renameTo(displayName: String): UniFile? = DocumentsContractApi21.renameTo(uri, displayName)?.let { result ->
+        TreeDocumentFile(parent, result, displayName)
+    }
 }
 
 private val projection = arrayOf(

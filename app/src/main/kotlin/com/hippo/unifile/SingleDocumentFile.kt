@@ -40,13 +40,17 @@ class SingleDocumentFile(override val uri: Uri) : UniFile {
 
     override fun canWrite() = DocumentsContractApi19.canWrite(uri)
 
+    override fun ensureDir() = isDirectory
+
+    override fun ensureFile() = isFile
+
+    override fun resolve(displayName: String) = error("SingleDocumentFile never have a children")
+
     override fun delete() = DocumentsContractApi19.delete(uri)
 
     override fun exists() = DocumentsContractApi19.exists(uri)
 
     override fun listFiles() = emptyList<SingleDocumentFile>()
-
-    override fun findFirst(filter: (String) -> Boolean) = null
 
     override fun findFile(displayName: String) = null
 

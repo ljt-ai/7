@@ -22,23 +22,19 @@ import android.os.ParcelFileDescriptor.parseMode
 import android.webkit.MimeTypeMap
 import java.io.File
 
-class RawFile(parent: RawFile?, private val file: File) : CachingFile<RawFile>(parent) {
-    override fun list() = file.listFiles()?.let { children ->
+class RawFile(parent: RawFile?, private val file: File) : FileNode<RawFile>(parent) {
+    override fun listFiles() = file.listFiles()?.let { children ->
         MutableList(children.size) { RawFile(this, children[it]) }
-    }
+    } ?: emptyList()
 
     private fun createFile(displayName: String, isFile: Boolean): UniFile? {
-        val child = findFile(displayName)
-        return if (child != null) {
-            child.takeIf { if (isFile) it.isFile else it.isDirectory }
+        if (!ensureDir()) return null
+        val target = File(file, displayName)
+        val created = if (isFile) target.createNewFile() else target.mkdir()
+        return if (created) {
+            RawFile(this, target)
         } else {
-            val target = File(file, displayName)
-            val created = if (isFile) target.createNewFile() else target.mkdir()
-            if (created) {
-                RawFile(this, target).also { popCacheIfPresent(it) }
-            } else {
-                null
-            }
+            null
         }
     }
 
@@ -70,16 +66,16 @@ class RawFile(parent: RawFile?, private val file: File) : CachingFile<RawFile>(p
 
     override fun canWrite() = file.canWrite()
 
-    override fun delete() = file.deleteRecursively().also {
-        if (it) parent?.evictCacheIfPresent(this)
-    }
+    override fun resolve(displayName: String) = RawFile(this, File(file, displayName))
+
+    override fun delete() = file.deleteRecursively()
 
     override fun exists() = file.exists()
 
     override fun renameTo(displayName: String): UniFile? {
         val target = File(file.parentFile, displayName)
         return if (file.renameTo(target)) {
-            RawFile(parent, target).also { parent?.replaceCacheIfPresent(this, it) }
+            RawFile(parent, target)
         } else {
             null
         }
